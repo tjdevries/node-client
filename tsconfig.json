@@ -1,0 +1,7 @@
+{
+    "compilerOptions": {
+        "target": "ES2017",
+        "module": "es6",
+        "strictNullChecks": true
+    }
+}
