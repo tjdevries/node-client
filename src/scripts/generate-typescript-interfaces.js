@@ -1,12 +1,12 @@
 "use strict";
-exports.__esModule = true;
-var _ = require("lodash");
+Object.defineProperty(exports, "__esModule", { value: true });
+require("lodash");
 var typeMap = {
     'String': 'string',
     'Integer': 'number',
     'Boolean': 'boolean',
     'Array': 'Array<any>',
-    'Dictionary': '{}'
+    'Dictionary': '{}',
 };
 /**
  * Convert the mspack RPC type to a Typescript Type
