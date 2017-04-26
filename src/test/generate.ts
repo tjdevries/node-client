@@ -1,5 +1,4 @@
-import { convertType, RPCMethodToSignature } from '../scripts/generate-typescript-interfaces';
-import { generateWrappers } from '../nvimRequestGenerator';
+import { convertType, RPCMethodToSignature, generateWrappers } from '../nvimRequestGenerator';
 import * as rpc from '../nvimRpc';
 
 let assert = require('assert');
@@ -108,7 +107,7 @@ describe('Generator', () => {
             }
         }
         it('should log stuff', () => {
-            generateWrappers({}, metadata)
+            // generateWrappers({}, {}, metadata)
         });
     });
 });

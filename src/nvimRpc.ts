@@ -1,6 +1,18 @@
 var Session = require('msgpack5rpc');
 var traverse = require('traverse');
 
+import msgpack5 from 'msgpack5';
+import * as util from 'util';
+import { EventEmitter } from 'events';
+import * as stream from 'stream';
+
+
+// Place holders to keep buffer handles separate.
+// This seems to be the same idea Neovim does in src/nvim/api/private/defs.h
+export type BufferHandle = number;
+export type WindowHandle = number;
+export type TabpageHandle = number;
+
 export interface Version {
     api_compatible: number;
     api_level: number;
@@ -65,13 +77,13 @@ export interface Metadata {
 // export interface SessionType extends Object;
 export type SessionType = any;
 
-export interface RegisteredType {
+export interface RegisteredType<T> {
+    type: number;
     constructor: () => any;
-    code: number;
     // new Type(s, d, d)
-    decode: (data) => SessionType;
+    decode: (data) => T;
     // obj._data
-    encode: (obj) => any;
+    encode: (obj: T) => Buffer;
 }
 
 export function decode(obj) {
@@ -82,4 +94,50 @@ export function decode(obj) {
             try { this.update(item.toString('utf8')); } catch(e) {}
         }
     });
+
+    return obj
+}
+
+export function equals(other) {
+    try {
+        return this._data.toString() === other._data.toString();
+    } catch (e) {
+        return false;
+    }
+};
+
+export interface RequestSignature {
+    (method, args, cb): void;
+}
+
+export interface NotifySignature {
+    (method, args): void;
+}
+
+export interface DetachSignature {
+    (): void;
+}
+
+// Really the msgpack5rpc Session, but not ts'd originally
+export interface RPCSession extends EventEmitter {
+    _msgpack: msgpack5.MessagePack;
+
+    addTypes: (types) => void;
+    attach: (writer: stream.Writable, reader: stream.Readable) => void;
+    detach: () => void;
+    request: RequestSignature;
+    notify: NotifySignature;
+}
+
+export class RPCClass extends EventEmitter {
+    public _session: RPCSession;
+    public _decode: (buf: Buffer) => any = decode;
+    public _channel_id: number;
+
+    constructor(session: RPCSession, channel_id: number) {
+        super();
+
+        this._session = session;
+        this._channel_id = channel_id;
+    }
 }

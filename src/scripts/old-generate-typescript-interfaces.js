@@ -1,9 +1,9 @@
 var cp = require('child_process');
 
-var attach = require('./index');
+var attach = require('../../index');
 
 
-var proc = cp.spawn('nvim', ['-u', 'NONE', '-N', '--embed'], {
+var proc = cp.spawn('C:\\Users\\tdevries\\Downloads\\Neovim\\Neovim\\bin\\nvim', ['-u', 'NONE', '-N', '--embed'], {
   cwd: __dirname
 });
 
