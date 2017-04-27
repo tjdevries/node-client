@@ -11,31 +11,50 @@ var EventEmitter = require('events').EventEmitter;
  * Used to store the information requred to turn a neovim api method
  * into a typescript declaration
  */
-interface MethodItems {
+export interface MethodItems {
+    // Original name of the rpc method
     name: string;
+    // Name after camelCasing -> The name for typescript
+    typescriptName: string;
+    // Value the function will return
+    returnType: string;
+    // The object referencing the type of item it is
+    // i.e. Nvim, or Nvim.Buffer, etc.
     type: any;
-    args: string[];
-    params: string[];
+    typeName: string;
+    // Original arguments passed to the function
+    args: {name: string, type: string}[];
+    // Parameters to pass  to the TS Function
+    params: {name: string, type: string}[];
 }
 
 function generateTypeFunction(name: string) {
     let type: {[typeName: string]: rpc.SessionType} = new Object();
+
     type[name] = (session, data, decode) => {
         this._session = session;
         this._data = data;
         this._decode = decode;
     }
 
-    // Eventually switch to: type.prototype.equals
-    let equals = function equals(other: rpc.SessionType): boolean {
-        try {
-            return this._data.toString() === other._data.toString();
-        } catch (e) {
-            return false;
-        }
-    }
+    let equals = rpc.equals;
 
     return type;
+}
+
+let params_to_args = (param) => {
+    return { name: param[0], type: param[1] };
+}
+
+export function getFunctionSignatureCallback(func: rpc.Method): string {
+    let anyFunctionSignature: string = '(...any) => any'
+    let returnType = convertType(func.returnType, true);
+
+    if (returnType === 'void') {
+        return '(err: Error) => void) => void'
+    } else {
+        return '(err: Error, res: ' + returnType + ') => void';
+    }
 }
 
 /**
@@ -47,60 +66,106 @@ function generateTypeFunction(name: string) {
  * 
  * @returns The method items to describe a method
  */
-function getMethodItems(NvimType, types: Object, methodName: string, functionTypeName: string, args: string[]): MethodItems {
-    let typeArgs: MethodItems = {name: methodName, type: '', args: [], params: []};
+export function getMethodItems(func: rpc.Method, func_type: string, types: Object): MethodItems | null {
+    let parts: string[] = func.name.split('_');
+    let replace_name: string;
 
-    if (functionTypeName in ['Nvim', 'Vim', 'Ui']) {
-        typeArgs.type = NvimType;
-        typeArgs.args = args;
+    let typeArgs: MethodItems = {
+        name: func.name,
+        typescriptName: '',
+        // Always void, because we use callbacks
+        // Could be configured it we wanted to use promises
+        returnType: 'void',
+        type: undefined,
+        typeName: '',
+        args: [],
+        params: []
+    };
+
+    if (func_type in ['Nvim', 'Vim', 'Ui']) {
+        typeArgs.typeName = 'Nvim';
     } else {
-        typeArgs.type = types[functionTypeName];
-        // Substitute the buffer argument for `this`
-        typeArgs.args = ['this'].concat(args.slice(1));
+        typeArgs.typeName = func_type;
     }
 
-    typeArgs.params = args.concat(['cb']);
+    // If this function doesn't match the right style,
+    // then return null
+    if (!func.name.match('^' + types[typeArgs.typeName].prefix)) {
+        return null;
+    }
+
+    if (['Nvim', 'Vim', 'Ui'].indexOf(func_type) >= 0) {
+        // TODO: Fix this to be the object?
+        typeArgs.args = func.parameters.map(params_to_args);
+
+        replace_name = func.name.replace('nvim_', '');
+    } else {
+        // Substitute the buffer argument for `this.handle`
+        // TODO: Make sure that the item has '.handle'
+        // TODO: More descriptive function signature?
+        typeArgs.args = func.parameters.slice(1).map(params_to_args)
+        replace_name = func.name.replace(types[typeArgs.typeName].prefix, '');
+    }
+    typeArgs.type = types[typeArgs.typeName];
+    typeArgs.typescriptName = _.camelCase(replace_name);
+
+    // TODO: More descriptive function signature?
+    typeArgs.params = typeArgs.args.concat(
+        [{name: 'cb', type: getFunctionSignatureCallback(func)}]
+    )
 
     return typeArgs;
 }
 
-function generateMethods(method: rpc.Method, items: MethodItems) {
-    // TODO: Move to this much nicer method constructor way
-    class  methodConstructor {
+function generateMethods(method: rpc.Method, method_type: string, types: Object)  {
+    let items: MethodItems | null = getMethodItems(
+        method,
+        method_type,
+        types,
+    );
 
-        public _decode(res: any) {
-            return rpc.decode(res);
-        }
+    if (items === null) {
+        return;
+    } else {
+        // TODO: Move to this much nicer method constructor way
+        class  methodConstructor {
 
-        public _session: {
-            notify: (name, args) => any;
-            request: (name, args, err_cb) => any;
-        }
-
-        public static metadata = {
-            name: method.name,
-            // Not sure where this came from
-            // deferred: method.deferred,
-            returnType: method.returnType,
-            // parameters: items.args.concat(['cb']),
-            // parameterTypes
-
-        }
-        
-        constructor(cb?: (a: Error | null, b?: any) => any)  {
-            if (!cb) {
-                this._session.notify(method.name, items.args);
-                return;
+            public _decode(res: any) {
+                return rpc.decode(res);
             }
 
-            this._session.request(method.name, items.args, (err: Error, res) => {
-                if (err) { return cb(new Error(err[1])); }
-                cb(null, this._decode(res));
-            })
-        }
+            public _session: {
+                notify: (name, args) => any;
+                request: (name, args, err_cb) => any;
+            }
 
-        public toString() {
-            return 'this functoin i wrote';
+            public static metadata = {
+                name: method.name,
+                // Not sure where this came from
+                // deferred: method.deferred,
+                returnType: method.returnType,
+                // parameters: items.args.concat(['cb']),
+                // parameterTypes
+
+            }
+            
+            constructor(cb?: (a: Error | null, b?: any) => any)  {
+                if (items === null) { return; }
+
+                if (!cb) {
+                    this._session.notify(method.name, items.args);
+                    return;
+                }
+
+                this._session.request(method.name, items.args, (err: Error, res) => {
+                    if (err) { return cb(new Error(err[1])); }
+                    cb(null, this._decode(res));
+                })
+            }
+
+            public toString() {
+                return 'this functoin i wrote';
+            }
         }
     }
 
@@ -121,19 +186,24 @@ function generateMethods(method: rpc.Method, items: MethodItems) {
       '\n};'
     )();
     // TODO: Clean up the metadata
-    result.metadata = {
-      name: items.name,
-      // deferred: func.deferred,
-      returnType: method.returnType,
-      parameters: items.args.concat(['cb']),
-      parameterTypes: method.parameters.map(function(p) { return p[0]; }),
-      // canFail: method.can_fail,
-    }
+    result.metadata = items;
     if (items.name === 'Nvim') {
       result.metadata.parameterTypes.shift();
     }
 
     return result;
+}
+
+export function methodItemsToSignature(items: MethodItems): string {
+    let signatureArgument: string[] = [];
+    for(let i = 0; i < items.params.length; i++) {
+        signatureArgument.push(items.params[i].name
+            + ': '
+            + convertType(items.params[i].type, false));
+    }
+    return '  ' + items.typescriptName
+        + '(' + signatureArgument.join(', ')
+        + '): ' + convertType(items.returnType, true) + ';\n';
 }
 
 // TODO: specify the type for the registered type
@@ -166,27 +236,11 @@ export function generateWrappers(NvimType, types, metadata: rpc.Metadata): void 
             continue;
         }
 
-        let parts: string[] = func.name.split('_');
-        let functionTypeName: string = _.capitalize(parts[0]);
+        let method = generateMethods(func, NvimType, metadata.types);
 
-        // Not sure why they have a `slice` item.
-        let camelCaseName: string = _.camelCase(parts.join('_'));
-
-        let functionTypeArgs: MethodItems = getMethodItems(
-            NvimType,
-            metadata.types,
-            camelCaseName,
-            functionTypeName,
-            func.parameters.map(function(param: rpc.Parameter) { return param[1]; })
-        );
-
-        let method = generateMethods(func, functionTypeArgs);
-
-        types[functionTypeArgs.name] = method;
-
-        console.log(functionTypeArgs);
+        // Get the name from method
+        // types[functionTypeArgs.name] = method;
         console.log(method)
-
     }
 }
 

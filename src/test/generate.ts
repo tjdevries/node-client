@@ -1,26 +1,28 @@
-import { convertType, RPCMethodToSignature, generateWrappers } from '../nvimRequestGenerator';
+import * as generator from '../nvimRequestGenerator';
 import * as rpc from '../nvimRpc';
 
 let assert = require('assert');
 
+import { expect } from 'chai';
+
 describe('Generator', () => {
-    describe('convertType', () => {
+    describe('generator.convertType', () => {
         it('should parse basic types', () => {
-            assert(convertType('String', false) === 'string');
+            assert(generator.convertType('String', false) === 'string');
         });
 
         it('should convert ArrayOf types', () => {
-            assert(convertType('ArrayOf(String)', false) === 'string[]');
-            assert(convertType('ArrayOf(Integer)', false) === 'number[]');
+            assert(generator.convertType('ArrayOf(String)', false) === 'string[]');
+            assert(generator.convertType('ArrayOf(Integer)', false) === 'number[]');
         });
 
         it('should convert complicated ArrayOf types', () => {
-            assert(convertType('ArrayOf(Integer, 2)', false) === '[number, number]');
+            assert(generator.convertType('ArrayOf(Integer, 2)', false) === '[number, number]');
         });
 
         it('should convert Nvim handles to special values', () => {
-            assert(convertType('Buffer', false) === 'BufferHandle');
-            assert(convertType('Buffer', true) === 'Buffer');
+            assert(generator.convertType('Buffer', false) === 'BufferHandle');
+            assert(generator.convertType('Buffer', true) === 'Buffer');
         });
 
         // TODO: Check return type conversions
@@ -37,8 +39,84 @@ describe('Generator', () => {
             }
 
             assert(
-                '  methodName((err: Error, res: number) => void): void;\n' === RPCMethodToSignature(method)
+                '  methodName((err: Error, res: number) => void): void;\n' === generator.RPCMethodToSignature(method)
             )
+        });
+    });
+
+    describe('getMethodItems', () => {
+        let func: rpc.Method = {
+            method: true,
+            name: 'nvim_buf_line_count',
+            returnType: 'number',
+            parameters: [
+                ['buffer', 'BufferHandle']
+            ],
+            since: 0
+        }
+
+        let types = {
+            Nvim: {id: -1, prefix: ''},
+            Buffer: {id: 0, prefix: 'nvim_buf_'},
+            Window: {id: 1, prefix: 'nvim_win_'}
+        }
+
+        it('should return a methodItem', () => {
+            let buffer_result: generator.MethodItems | null = 
+                generator.getMethodItems(
+                    func,
+                    'Nvim',
+                    types
+                );
+            if (buffer_result === null) {
+                assert(false);
+                return;
+            }
+            expect(buffer_result.typescriptName).to.equal('bufLineCount');
+            expect(buffer_result.params).to.equal([]);
+            expect(buffer_result.params).to.equal([]);
+        });
+
+        it('should work with Buffer types', () => {
+            let buffer_result: generator.MethodItems | null = 
+                generator.getMethodItems(
+                    func,
+                    'Buffer',
+                    types
+                );
+            if (buffer_result === null) {
+                assert(false);
+                return;
+            }
+            expect(buffer_result.typescriptName).to.equal('lineCount');
+        });
+
+        it('should return null for non-valid items', () => {
+            expect(
+                generator.getMethodItems(
+                    func,
+                    'Window',
+                    types
+                )
+            ).to.equal(null);
+        })
+
+        it('should have a signature without Buffer for Buffer', () => {
+            let items = generator.getMethodItems(func, 'Buffer', types);
+            if (items) {
+                expect(generator.methodItemsToSignature(items)).to.equal('');
+            } else {
+                expect('').to.equal('items was not supposed to be null');
+            }
+        });
+
+        it('should have a signature with BufferHandle for Nvim', () => {
+            let items = generator.getMethodItems(func, 'Nvim', types);
+            if (items) {
+                expect(generator.methodItemsToSignature(items)).to.equal('');
+            } else {
+                expect('').to.equal('items was not supposed to be null');
+            }
         });
     });
 

@@ -13,6 +13,14 @@ export type BufferHandle = number;
 export type WindowHandle = number;
 export type TabpageHandle = number;
 
+export function GetHandleStrings(): string[] {
+    return [
+        'export type BufferHandle = number;',
+        'export type WindowHandle = number;',
+        'export type TabpageHandle = number;',
+    ]
+}
+
 export interface Version {
     api_compatible: number;
     api_level: number;
